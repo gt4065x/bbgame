@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>모던 벽돌깨기 - 커스텀 설정</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            touch-action: none;
+            overflow: hidden;
+            background-color: #0f172a;
+        }
+        #gameCanvas {
+            background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+            display: block;
+            margin: 0 auto;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+            max-width: 100%;
+            height: auto;
+        }
+        .ui-overlay {
+            pointer-events: none;
+        }
+        .interactive {
+            pointer-events: auto;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        /* 모달 애니메이션 */
+        .modal-enter { opacity: 0; transform: scale(0.95); }
+        .modal-enter-active { opacity: 1; transform: scale(1); transition: all 0.2s ease-out; }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4 font-sans text-slate-200">
+
+    <div class="w-full max-w-lg space-y-4">
+        <!-- 상단 정보 바 -->
+        <div class="flex justify-between items-center bg-slate-800/50 p-4 rounded-xl backdrop-blur-sm border border-slate-700">
+            <div class="flex flex-col">
+                <span class="text-xs uppercase tracking-widest text-slate-400">SCORE</span>
+                <span id="scoreDisplay" class="text-2xl font-bold text-emerald-400">0</span>
+            </div>
+            <button id="openConfigBtn" class="p-2 hover:bg-slate-700 rounded-full transition-colors text-slate-400 hover:text-white" title="Firebase 설정">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+            </button>
+            <div class="flex flex-col items-end">
+                <span class="text-xs uppercase tracking-widest text-slate-400">LIVES</span>
+                <div id="livesDisplay" class="flex gap-1"></div>
+            </div>
+        </div>
+
+        <!-- 게임 화면 컨테이너 -->
+        <div class="relative">
+            <canvas id="gameCanvas" width="480" height="500"></canvas>
+
+            <!-- 시작/오버 레이어 -->
+            <div id="overlay" class="absolute inset-0 flex items-center justify-center bg-slate-900/90 rounded-lg ui-overlay transition-opacity duration-300">
+                <div class="text-center p-6 w-full max-w-sm space-y-4 interactive">
+                    <h1 id="statusTitle" class="text-3xl font-black text-white tracking-tight uppercase">Brick Breaker</h1>
+                    
+                    <div id="nameInputSection" class="space-y-2">
+                        <label class="text-xs text-slate-400 uppercase tracking-widest">플레이어 이름</label>
+                        <input type="text" id="playerName" maxlength="10" placeholder="Guest" 
+                               class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-center text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    </div>
+
+                    <p id="statusDesc" class="text-slate-400 text-sm">인증이 완료되면 시작할 수 있습니다</p>
+                    
+                    <div class="flex flex-col gap-2">
+                        <button id="startBtn" disabled class="px-8 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white font-bold rounded-xl transition-all shadow-lg">
+                            인증 대기 중...
+                        </button>
+                    </div>
+
+                    <div class="mt-4 bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+                        <h2 class="text-sm font-bold text-slate-300 mb-3 uppercase tracking-tighter flex justify-between">
+                            <span>리더보드</span>
+                            <span id="dbStatus" class="text-rose-500 text-[10px]">연결 안됨</span>
+                        </h2>
+                        <div id="leaderboardList" class="space-y-2 max-h-40 overflow-y-auto scrollbar-hide text-left">
+                            <p class="text-xs text-slate-500 text-center py-2">데이터를 불러오는 중...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 설정 모달 -->
+    <div id="configModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm hidden p-4">
+        <div class="bg-slate-800 border border-slate-700 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+            <div class="p-6 space-y-4">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-xl font-bold text-white">Firebase 설정</h2>
+                    <button id="closeConfigBtn" class="text-slate-400 hover:text-white">&times;</button>
+                </div>
+                <p class="text-sm text-slate-400">
+                    Firebase 콘솔의 프로젝트 설정에서 <b>SDK 설정 및 구성(JSON)</b> 내용을 아래에 붙여넣으세요.
+                </p>
+                <textarea id="configInput" class="w-full h-48 bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs font-mono text-emerald-400 focus:ring-2 focus:ring-emerald-500 focus:outline-none" placeholder='{ "apiKey": "...", "authDomain": "...", ... }'></textarea>
+                <div class="flex gap-2">
+                    <button id="saveConfigBtn" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2 rounded-lg transition-colors">저장 후 다시 로드</button>
+                    <button id="resetConfigBtn" class="px-4 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2 rounded-lg transition-colors">초기화</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 글로벌 변수
+        let app, auth, db, user;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'brick-breaker-v1';
+
+        // DOM 요소
+        const configModal = document.getElementById("configModal");
+        const configInput = document.getElementById("configInput");
+        const openConfigBtn = document.getElementById("openConfigBtn");
+        const closeConfigBtn = document.getElementById("closeConfigBtn");
+        const saveConfigBtn = document.getElementById("saveConfigBtn");
+        const resetConfigBtn = document.getElementById("resetConfigBtn");
+        const dbStatus = document.getElementById("dbStatus");
+        const startBtn = document.getElementById("startBtn");
+        const leaderboardList = document.getElementById("leaderboardList");
+
+        // --- Firebase 초기화 및 설정 관리 ---
+
+        function getStoredConfig() {
+            const saved = localStorage.getItem('custom_firebase_config');
+            if (saved) return JSON.parse(saved);
+            
+            // 사용자가 제공한 기본 설정값 (Fallback)
+            return {
+                apiKey: "AIzaSyAPYPRKcqfi19rV2h6IRl89wz3vG7P-8ZE",
+                authDomain: "bbgame-61b77.firebaseapp.com",
+                databaseURL: "https://bbgame-61b77-default-rtdb.asia-southeast1.firebasedatabase.app",
+                projectId: "bbgame-61b77",
+                storageBucket: "bbgame-61b77.firebasestorage.app",
+                messagingSenderId: "253173662196",
+                appId: "1:253173662196:web:e46990e910136aede839a1"
+            };
+        }
+
+        async function initFirebase() {
+            const config = getStoredConfig();
+            if (!config || !config.apiKey) {
+                dbStatus.textContent = "설정 필요";
+                dbStatus.className = "text-amber-500 text-[10px]";
+                return;
+            }
+
+            try {
+                app = initializeApp(config);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // 익명 로그인 시도
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                onAuthStateChanged(auth, (u) => {
+                    user = u;
+                    if (user) {
+                        dbStatus.textContent = "연결됨";
+                        dbStatus.className = "text-emerald-500 text-[10px]";
+                        startBtn.disabled = false;
+                        startBtn.textContent = "게임 시작";
+                        loadLeaderboard();
+                    }
+                });
+            } catch (error) {
+                console.error("Firebase Init Error:", error);
+                dbStatus.textContent = "오류 발생";
+                dbStatus.className = "text-rose-500 text-[10px]";
+                leaderboardList.innerHTML = `<p class="text-xs text-rose-400 text-center py-2">설정이 올바르지 않습니다.<br>${error.message}</p>`;
+            }
+        }
+
+        // 설정 저장
+        saveConfigBtn.addEventListener('click', () => {
+            try {
+                const configStr = configInput.value.trim();
+                JSON.parse(configStr); // 검증
+                localStorage.setItem('custom_firebase_config', configStr);
+                location.reload(); // 설정을 적용하기 위해 페이지 리로드
+            } catch (e) {
+                alert("올바른 JSON 형식이 아닙니다.");
+            }
+        });
+
+        // 설정 초기화
+        resetConfigBtn.addEventListener('click', () => {
+            if(confirm("설정을 초기화하시겠습니까?")) {
+                localStorage.removeItem('custom_firebase_config');
+                location.reload();
+            }
+        });
+
+        // 모달 제어
+        openConfigBtn.addEventListener('click', () => {
+            const currentConfig = getStoredConfig();
+            configInput.value = currentConfig ? JSON.stringify(currentConfig, null, 2) : "";
+            configModal.classList.remove('hidden');
+        });
+        closeConfigBtn.addEventListener('click', () => configModal.classList.add('hidden'));
+
+        // --- 리더보드 및 저장 로직 ---
+
+        function loadLeaderboard() {
+            if (!db) return;
+            const lbRef = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+            onSnapshot(lbRef, (snapshot) => {
+                let players = [];
+                snapshot.forEach(doc => players.push(doc.data()));
+                players.sort((a, b) => b.score - a.score);
+                
+                leaderboardList.innerHTML = "";
+                players.slice(0, 10).forEach((p, index) => {
+                    const row = document.createElement("div");
+                    const isMe = user && p.uid === user.uid;
+                    row.className = `flex justify-between items-center text-xs p-2 rounded ${isMe ? 'bg-emerald-500/20 border border-emerald-500/30' : 'bg-slate-700/30'}`;
+                    row.innerHTML = `
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold w-4 ${index < 3 ? 'text-yellow-400' : 'text-slate-500'}">${index + 1}</span>
+                            <span class="truncate max-w-[100px] text-slate-200">${p.name || 'Anonymous'}</span>
+                        </div>
+                        <span class="font-mono text-emerald-400 font-bold">${p.score.toLocaleString()}</span>
+                    `;
+                    leaderboardList.appendChild(row);
+                });
+                if (players.length === 0) leaderboardList.innerHTML = '<p class="text-xs text-slate-500 text-center py-2">첫 기록을 남겨보세요!</p>';
+            }, (err) => {
+                console.error("Leaderboard error:", err);
+                leaderboardList.innerHTML = `<p class="text-xs text-rose-400 text-center py-2">Firestore 권한 오류.<br>Rules 설정을 확인하세요.</p>`;
+            });
+        }
+
+        async function saveScore(score) {
+            if (!user || !db) return;
+            const name = document.getElementById("playerName").value.trim() || "Guest";
+            const scoreRef = doc(db, 'artifacts', appId, 'public', 'data', 'leaderboard', user.uid);
+            try {
+                const existingDoc = await getDoc(scoreRef);
+                if (!existingDoc.exists() || existingDoc.data().score < score) {
+                    await setDoc(scoreRef, { uid: user.uid, name: name, score: score, updatedAt: Date.now() });
+                }
+            } catch (err) { console.error("Score save error:", err); }
+        }
+
+        // --- 게임 로직 ---
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const scoreDisplay = document.getElementById("scoreDisplay");
+        const livesDisplay = document.getElementById("livesDisplay");
+        const overlay = document.getElementById("overlay");
+        const statusTitle = document.getElementById("statusTitle");
+        const statusDesc = document.getElementById("statusDesc");
+
+        let gameScore = 0, lives = 3, isPlaying = false, animationId;
+        const ballRadius = 8, paddleWidth = 100, paddleHeight = 12;
+        const brickRows = 5, brickCols = 6, brickPadding = 8;
+        const brickWidth = (canvas.width - 40 - (brickPadding * (brickCols - 1))) / brickCols;
+        const brickHeight = 20;
+        let bx, by, bdx, bdy, px, bricks = [];
+
+        function initBricks() {
+            bricks = [];
+            for (let c = 0; c < brickCols; c++) {
+                bricks[c] = [];
+                for (let r = 0; r < brickRows; r++) bricks[c][r] = { x: 0, y: 0, status: 1, color: `hsl(${r * 40 + 200}, 70%, 55%)` };
+            }
+        }
+
+        function draw() {
+            if (!isPlaying) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 벽돌
+            for (let c = 0; c < brickCols; c++) {
+                for (let r = 0; r < brickRows; r++) {
+                    const b = bricks[c][r];
+                    if (b.status === 1) {
+                        b.x = (c * (brickWidth + brickPadding)) + 20;
+                        b.y = (r * (brickHeight + brickPadding)) + 40;
+                        ctx.beginPath(); ctx.roundRect(b.x, b.y, brickWidth, brickHeight, 4);
+                        ctx.fillStyle = b.color; ctx.fill(); ctx.closePath();
+                        if (bx > b.x && bx < b.x + brickWidth && by > b.y && by < b.y + brickHeight) {
+                            bdy = -bdy; b.status = 0; gameScore += 10;
+                            scoreDisplay.textContent = gameScore;
+                            if (gameScore === brickRows * brickCols * 10) endGame(true);
+                        }
+                    }
+                }
+            }
+
+            // 공
+            ctx.beginPath(); ctx.arc(bx, by, ballRadius, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill(); ctx.closePath();
+            // 패들
+            ctx.beginPath(); ctx.roundRect(px, canvas.height - paddleHeight - 15, paddleWidth, paddleHeight, 6); ctx.fillStyle = "#10b981"; ctx.fill(); ctx.closePath();
+
+            if (bx + bdx > canvas.width - ballRadius || bx + bdx < ballRadius) bdx = -bdx;
+            if (by + bdy < ballRadius) bdy = -bdy;
+            else if (by + bdy > canvas.height - ballRadius - 15) {
+                if (bx > px && bx < px + paddleWidth) {
+                    let hit = (bx - (px + paddleWidth / 2)) / (paddleWidth / 2);
+                    bdx = hit * 5; bdy = -bdy;
+                } else if (by + bdy > canvas.height - ballRadius) {
+                    lives--; updateLives();
+                    if (!lives) endGame(false);
+                    else { bx = canvas.width / 2; by = canvas.height - 50; bdx = 3; bdy = -3; px = (canvas.width - paddleWidth) / 2; }
+                }
+            }
+            bx += bdx; by += bdy;
+            animationId = requestAnimationFrame(draw);
+        }
+
+        function updateLives() {
+            livesDisplay.innerHTML = "";
+            for (let i = 0; i < 3; i++) {
+                livesDisplay.innerHTML += `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 ${i < lives ? 'text-rose-500' : 'text-slate-700'}" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" /></svg>`;
+            }
+        }
+
+        async function endGame(victory) {
+            isPlaying = false; cancelAnimationFrame(animationId);
+            await saveScore(gameScore);
+            overlay.style.opacity = "1"; overlay.style.pointerEvents = "auto";
+            statusTitle.textContent = victory ? "Victory!" : "Game Over";
+            statusTitle.className = `text-3xl font-black uppercase ${victory ? 'text-emerald-400' : 'text-rose-500'}`;
+            statusDesc.textContent = `최종 점수: ${gameScore}`;
+            startBtn.textContent = "다시 시작";
+        }
+
+        function startGame() {
+            gameScore = 0; lives = 3; bx = canvas.width / 2; by = canvas.height - 50; bdx = 3; bdy = -3;
+            px = (canvas.width - paddleWidth) / 2; scoreDisplay.textContent = "0";
+            initBricks(); updateLives();
+            overlay.style.opacity = "0"; overlay.style.pointerEvents = "none";
+            isPlaying = true; draw();
+        }
+
+        startBtn.addEventListener("click", startGame);
+        document.addEventListener("mousemove", (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const relX = e.clientX - rect.left;
+            if (relX > 0 && relX < canvas.width) px = relX - paddleWidth / 2;
+        });
+        document.addEventListener("touchmove", (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const relX = e.touches[0].clientX - rect.left;
+            if (relX > 0 && relX < canvas.width) px = relX - paddleWidth / 2;
+            e.preventDefault();
+        }, { passive: false });
+
+        // 초기 실행
+        initFirebase();
+    </script>
+</body>
+</html>
